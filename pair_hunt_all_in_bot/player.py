@@ -150,7 +150,7 @@ class Player(Bot):
                 my_actions[i] = AssignAction(cards) #add to our actions
 
             elif (RaiseAction in legal_actions[i] and self.strong_hole): #only consider this if we're strong
-                min_raise, max_raise = round_state.board_states[i].raise_bounds(active, stacks) #calulate the highest and lowest we can raise to
+                min_raise, max_raise = round_state.board_states[i].raise_bounds(active, round_state.stacks) #calulate the highest and lowest we can raise to
                 max_cost = max_raise - my_pips[i] #the cost to give the max raise
 
                 if max_cost <= my_stack - net_cost: #name sure the max_cost is something we can afford! Must have at least this much left after our other costs
