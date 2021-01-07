@@ -12,7 +12,6 @@ import socket
 import eval7
 import sys
 import os
-import copy
 
 sys.path.append(os.getcwd())
 from config import *
@@ -169,19 +168,6 @@ class RoundState(namedtuple('_RoundState', ['button', 'street', 'stacks', 'hands
         Returns a list of sets which correspond to the active player's legal moves on each board.
         '''
         return [board_state.legal_actions(self.button, self.stacks) if isinstance(board_state, BoardState) else {CheckAction} for board_state in self.board_states]
-
-    def raise_bounds(self):
-        '''
-        Returns a tuple of the minimum and maximum legal raises summed across boards.
-        '''
-        active = self.button % 2
-        net_continue_cost = 0
-        net_pips_unsettled = 0
-        for board_state in self.board_states:
-            if isinstance(board_state, BoardState) and not board_state.settled:
-                net_continue_cost += board_state.pips[1-active] - board_state.pips[active]
-                net_pips_unsettled += board_state.pips[active]
-        return (0, net_pips_unsettled + min(self.stacks[active], self.stacks[1-active] + net_continue_cost))
 
     def proceed_street(self):
         '''
@@ -366,15 +352,36 @@ class Player():
                     #else: (assigned cards not in hand or some cards unassigned)
                     game_log.append(self.name + ' attempted illegal assignment')
                 else:
-                    total_raise = 0
-                    for action in actions:
-                        if isinstance(action, RaiseAction):
-                            total_raise += action.amount
-                    min_raise, max_raise = round_state.raise_bounds() if isinstance(round_state, RoundState) else (0, 0)
-                    if min_raise <= total_raise <= max_raise:
-                        return actions
-                    #else: (attempted negative net raise or net raise larger than bankroll)
-                    game_log.append(self.name + " attempted net illegal RaiseAction's")
+                    contribution = 0
+                    opp_continue_cost = 0
+                    for i in range(NUM_BOARDS):
+                        if isinstance(actions[i], RaiseAction):
+                            contribution += actions[i].amount - round_state.board_states[i].pips[index]
+                            opp_continue_cost += actions[i].amount - round_state.board_states[i].pips[1-index]
+                        elif isinstance(actions[i], CallAction):
+                            contribution += round_state.board_states[i].pips[1-index] - round_state.board_states[i].pips[index]
+                    max_contribution = round_state.stacks[index] if isinstance(round_state, RoundState) else 0
+                    opp_stack = round_state.stacks[1-index] if isinstance(round_state, RoundState) else 0
+                    if 0 <= contribution <= max_contribution:
+                        if opp_continue_cost <= opp_stack:
+                            return actions
+                        else:
+                            game_log.append(self.name + " attempted net RaiseAction's which opponent cannot match")
+                            effective_stack = round_state.stacks[1-index]
+                            mod_actions = actions[:]
+                            for i in range(NUM_BOARDS):
+                                if isinstance(actions[i], RaiseAction):
+                                    raise_delta = actions[i].amount - round_state.board_states[i].pips[1-index]
+                                    if effective_stack == 0:
+                                        mod_actions[i] = CallAction()
+                                    elif raise_delta > effective_stack:
+                                        mod_actions[i] = RaiseAction(round_state.board_states[i].pips[1-index] + effective_stack)
+                                        effective_stack = 0
+                                    else:
+                                        effective_stack -= raise_delta
+                            return mod_actions
+                    else: # (attempted negative net raise or net raise larger than bankroll)
+                        game_log.append(self.name + " attempted an illegal combination of RaiseAction's and/or CallAction's")
             except socket.timeout:
                 error_message = self.name + ' ran out of time'
                 game_log.append(error_message)
@@ -405,6 +412,8 @@ class Player():
             if clause[1] == 'R':
                 amount = int(clause[2:])
                 min_raise, max_raise = board_state.raise_bounds(button, stacks)
+                raise_delta = amount - board_state.pips[button % 2]
+                min_raise = 0 if stacks[button % 2] - raise_delta == 0 else min_raise
                 if min_raise <= amount <= max_raise:
                     return action(amount)
             elif clause[1] == 'A':
@@ -431,8 +440,8 @@ class Game():
         Incorporates RoundState information into the game log and player messages.
         '''
         if round_state.street == 0 and round_state.button == -2:
-            self.log.append('{} posts the blind of {}'.format(players[0].name, SMALL_BLIND))
-            self.log.append('{} posts the blind of {}'.format(players[1].name, BIG_BLIND))
+            self.log.append('{} posts the blind of {} on each board'.format(players[0].name, SMALL_BLIND))
+            self.log.append('{} posts the blind of {} on each board'.format(players[1].name, BIG_BLIND))
             self.log.append('{} dealt {}'.format(players[0].name, PCARDS(round_state.hands[0])))
             self.log.append('{} dealt {}'.format(players[1].name, PCARDS(round_state.hands[1])))
             self.player_messages[0] = ['T0.', 'P0', 'H' + CCARDS(round_state.hands[0])]
