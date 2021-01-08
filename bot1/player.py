@@ -41,8 +41,9 @@ class Player(Bot):
         Arguments:
         my_cards: a list of the 6 cards given to us at round start
         '''
+        my_cards_obj = [eval7.Card(c) for c in my_cards]
         opp_range = ALL_HANDS.hands
-        opp_range = [hand for hand in opp_range if hand[0][0] not in my_cards and hand[0][1] not in my_cards]
+        opp_range = [hand for hand in opp_range if hand[0][0] not in my_cards_obj and hand[0][1] not in my_cards_obj]
 
         equities = {}
         for i in range(5):
