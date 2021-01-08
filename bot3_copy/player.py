@@ -201,12 +201,12 @@ class Player(Bot):
                 ######
                 if street < 3:
                     if active == 0: # the opp is bb
-                        if opp_pips[i] > 2*i: # opp has voluntarily put chips in (responding to our raise)
+                        if opp_pips[i] > 2*(i + 1): # opp has voluntarily put chips in (responding to our raise)
                             self.opp_vpip_round[i] = 1
                             if cont_cost > 0: # opp has raised in response to our raise
                                 self.opp_pfr_round[i] = 1
                     else: # the opp is sb
-                        if opp_pips[i] > i:
+                        if opp_pips[i] > i + 1:
                             self.opp_vpip_round[i] = 1
                         if cont_cost > 0: # opp has raised
                             self.opp_pfr_round[i] = 1
