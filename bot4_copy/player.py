@@ -67,7 +67,7 @@ class Player(Bot):
         for i in range(5):
             for j in range(i + 1, 6):
                 hand = (my_cards[i], my_cards[j])
-                equities[hand] = eval7.py_hand_vs_range_monte_carlo(map(eval7.Card, hand), opp_range, [], 5000)
+                equities[hand] = eval7.py_hand_vs_range_monte_carlo(map(eval7.Card, hand), opp_range, [], 6500)
 
         dis = [(0, 1, 2, 3, 4, 5), (0, 1, 2, 4, 3, 5), (0, 1, 2, 5, 3, 4), 
                 (0, 2, 1, 3, 4, 5), (0, 2, 1, 4, 3, 5), (0, 2, 1, 5, 3, 4), 
@@ -239,7 +239,7 @@ class Player(Bot):
                     board = [eval7.Card(c) for c in board_cards[i] if c != ""]
                     hand = [eval7.Card(c) for c in self.board_allocations[i]]
                     self.opp_range[i] = [h for h in self.opp_range[i] if h[0][0] not in board and h[0][1] not in board]
-                    self.equity[i] = eval7.py_hand_vs_range_monte_carlo(hand, self.opp_range[i], board, 5000)
+                    self.equity[i] = eval7.py_hand_vs_range_monte_carlo(hand, self.opp_range[i], board, 6500)
                 
                 strength = self.equity[i]
                 #######
