@@ -52,10 +52,12 @@ ALL_HANDS = eval7.HandRange("22+, A2+, K2+, Q2+, J2+, T2+, 92+, 82+, 72+, 62+, 5
 #     return eval7.HandRange(range_text)
 
 # import pickle
+# import time
 
+# start = time.perf_counter()
 # ranges = [eval7.HandRange("AA")]
 # range_text = "AA"
-# for r in SLANSKY_KARLSON:
+# for r in SLANSKY_KARLSON[:100]:
 #     print(r)
 #     num = len(eval7.HandRange(r))
 #     if r != "AA":
@@ -63,9 +65,20 @@ ALL_HANDS = eval7.HandRange("22+, A2+, K2+, Q2+, J2+, T2+, 92+, 82+, 72+, 62+, 5
 #     hr = eval7.HandRange(range_text)
 #     for i in range(num):
 #         ranges.append(hr)
+# stop = time.perf_counter()
+# print(stop - start)
 
 # with open("ranges.pkl", "wb") as f:
 #     pickle.dump(ranges, f)
+
+
+# with open('ranges_test.txt', 'w') as r:
+#     r.write(str(ranges[:6]))
+
+# with open('ranges.txt', "r") as f:
+#     x = f.readlines()
+#     # print(x, type(x))
+#     temp = eval(x[0])
 
 # print(ranges[1326])
 

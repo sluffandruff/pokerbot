@@ -39,12 +39,12 @@ class Player(Bot):
         self.opp_pfr_round = [0, 0, 0]
 
         self.ranges = ["AA"]
-        range_text = "AA"
-        for r in SLANSKY_KARLSON:
+        self.range_text = "AA"
+        for r in SLANSKY_KARLSON[:100]:
             num = len(eval7.HandRange(r))
             if r != "AA":
-                range_text += "," + r
-            hr = eval7.HandRange(range_text)
+                self.range_text += "," + r
+            hr = eval7.HandRange(self.range_text)
             for i in range(num):
                 self.ranges.append(hr)
 
@@ -67,7 +67,7 @@ class Player(Bot):
         for i in range(5):
             for j in range(i + 1, 6):
                 hand = (my_cards[i], my_cards[j])
-                equities[hand] = eval7.py_hand_vs_range_monte_carlo(map(eval7.Card, hand), opp_range, [], 12000)
+                equities[hand] = eval7.py_hand_vs_range_monte_carlo(map(eval7.Card, hand), opp_range, [], 5000)
 
         dis = [(0, 1, 2, 3, 4, 5), (0, 1, 2, 4, 3, 5), (0, 1, 2, 5, 3, 4), 
                 (0, 2, 1, 3, 4, 5), (0, 2, 1, 4, 3, 5), (0, 2, 1, 5, 3, 4), 
@@ -112,6 +112,15 @@ class Player(Bot):
         round_num = game_state.round_num  # the round number from 1 to NUM_ROUNDS
         my_cards = round_state.hands[active]  # your six cards at the start of the round
         big_blind = bool(active)  # True if you are the big blind
+
+        if round_num == 1:
+            for r in SLANSKY_KARLSON[100:]:
+                num = len(eval7.HandRange(r))
+                if r != "AA":
+                    self.range_text += "," + r
+                hr = eval7.HandRange(self.range_text)
+                for i in range(num):
+                    self.ranges.append(hr)
         
         self.allocate_cards(my_cards)
 
@@ -230,7 +239,7 @@ class Player(Bot):
                     board = [eval7.Card(c) for c in board_cards[i] if c != ""]
                     hand = [eval7.Card(c) for c in self.board_allocations[i]]
                     self.opp_range[i] = [h for h in self.opp_range[i] if h[0][0] not in board and h[0][1] not in board]
-                    self.equity[i] = eval7.py_hand_vs_range_monte_carlo(hand, self.opp_range[i], board, 12000)
+                    self.equity[i] = eval7.py_hand_vs_range_monte_carlo(hand, self.opp_range[i], board, 5000)
                 
                 strength = self.equity[i]
                 #######
