@@ -97,10 +97,10 @@ class Player(Bot):
             if AssignAction in legal_actions[i]:
                 cards = [my_cards[2*i], my_cards[2*i+1]]
                 my_actions[i] = AssignAction(cards)
-            elif CheckAction in legal_actions[i]:  # check-call
+            elif CheckAction in legal_actions[i]: 
                 my_actions[i] = CheckAction()
             else:
-                my_actions[i] = CallAction()
+                my_actions[i] = FoldAction()
         return my_actions
 
 
