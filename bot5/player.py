@@ -28,9 +28,25 @@ class Player(Bot):
         Nothing.
         ''' 
         self.board_allocations = [[], [], []] #keep track of our allocations at round start
-        self.hole_strengths = [0, 0, 0] #better representation of our hole strengths (win probability!)
-        self.opp_range = []
+        self.equity = [0, 0, 0] #better representation of our hole strengths (win probability!)
         self.street_tracker = 0
+        self.opp_range = [[], [], []]
+
+        self.opp_walks = [0, 0, 0] # SB folds
+        self.opp_vpip = [0, 0, 0] # times
+        self.opp_pfr = [0, 0, 0]
+        self.opp_vpip_round = [0, 0, 0] # 0 or 1 
+        self.opp_pfr_round = [0, 0, 0]
+
+        self.ranges = ["AA"]
+        self.range_text = "AA"
+        for r in SLANSKY_KARLSON[:100]:
+            num = len(eval7.HandRange(r))
+            if r != "AA":
+                self.range_text += "," + r
+            hr = eval7.HandRange(self.range_text)
+            for i in range(num):
+                self.ranges.append(hr)
 
 
     def allocate_cards(self, my_cards):
@@ -44,13 +60,14 @@ class Player(Bot):
         my_cards: a list of the 6 cards given to us at round start
         '''
         my_cards_obj = [eval7.Card(c) for c in my_cards]
-        self.opp_range = [hand for hand in ALL_HANDS.hands if hand[0][0] not in my_cards_obj and hand[0][1] not in my_cards_obj]
+        opp_range = [hand for hand in ALL_HANDS.hands if hand[0][0] not in my_cards_obj and hand[0][1] not in my_cards_obj]
+        self.opp_range = [opp_range[:], opp_range[:], opp_range[:]]
 
         equities = {}
         for i in range(5):
             for j in range(i + 1, 6):
                 hand = (my_cards[i], my_cards[j])
-                equities[hand] = eval7.py_hand_vs_range_monte_carlo(map(eval7.Card, hand), self.opp_range, [], 20000)
+                equities[hand] = eval7.py_hand_vs_range_monte_carlo(map(eval7.Card, hand), opp_range, [], 3700)
 
         dis = [(0, 1, 2, 3, 4, 5), (0, 1, 2, 4, 3, 5), (0, 1, 2, 5, 3, 4), 
                 (0, 2, 1, 3, 4, 5), (0, 2, 1, 4, 3, 5), (0, 2, 1, 5, 3, 4), 
@@ -74,7 +91,7 @@ class Player(Bot):
                 best_eq = [eq[i][0] for i in range(3)]
 
         self.board_allocations = best_alloc
-        self.hole_strengths = best_eq
+        self.equity = best_eq
 
 
     def handle_new_round(self, game_state, round_state, active):
@@ -95,6 +112,15 @@ class Player(Bot):
         round_num = game_state.round_num  # the round number from 1 to NUM_ROUNDS
         my_cards = round_state.hands[active]  # your six cards at the start of the round
         big_blind = bool(active)  # True if you are the big blind
+
+        if round_num == 1:
+            for r in SLANSKY_KARLSON[100:]:
+                num = len(eval7.HandRange(r))
+                if r != "AA":
+                    self.range_text += "," + r
+                hr = eval7.HandRange(self.range_text)
+                for i in range(num):
+                    self.ranges.append(hr)
         
         self.allocate_cards(my_cards)
 
@@ -121,14 +147,22 @@ class Player(Bot):
             opp_cards = previous_board_state.hands[1-active]  # opponent's cards or [] if not revealed
         
         self.board_allocations = [[], [], []] #reset our variables at the end of every round!
-        self.hole_strengths = [0, 0, 0]
-        self.opp_range = []
+        self.equity = [0, 0, 0]
         self.street_tracker = 0
+        self.opp_range = [[], [], []]
+        
+        for i in range(NUM_BOARDS):
+            self.opp_vpip[i] += self.opp_vpip_round[i]
+            self.opp_pfr[i] += self.opp_pfr_round[i]
+            self.opp_vpip_round[i] = 0
+            self.opp_pfr_round[i] = 0
 
         game_clock = game_state.game_clock #check how much time we have remaining at the end of a game
         round_num = game_state.round_num #Monte Carlo takes a lot of time, we use this to adjust!
+        # print(round_num, game_clock)
         if round_num == NUM_ROUNDS:
             print(game_clock)
+            print(self.opp_walks, self.opp_vpip, self.opp_pfr)
         
 
     def get_actions(self, game_state, round_state, active):
@@ -158,14 +192,6 @@ class Player(Bot):
         net_cost = 0 # keep track of the net additional amount you are spending across boards this round
 
         my_actions = [None] * NUM_BOARDS
-
-        if street != self.street_tracker:
-            self.street_tracker = street
-            for i in range(NUM_BOARDS):
-                hand = [eval7.Card(c) for c in self.board_allocations[i]]
-                board = [eval7.Card(c) for c in board_cards[i] if c != ""]
-                self.opp_range = [h for h in self.opp_range if h[0][0] not in board and h[0][1] not in board]
-                self.hole_strengths[i] = eval7.py_hand_vs_range_monte_carlo(hand, self.opp_range, board, 20000)
         
         for i in range(NUM_BOARDS):
             board_state = round_state.board_states[i]
@@ -180,142 +206,104 @@ class Player(Bot):
                 init_pot = board_state.pot
                 pot = my_pips[i] + opp_pips[i] + init_pot
                 min_raise, max_raise = board_state.raise_bounds(active, round_state.stacks)
-                strength = self.hole_strengths[i]
 
-                if strength < 0.5:
+                ######
+                if street < 3:
+                    if active == 0: # the opp is bb
+                        if opp_pips[i] > 2: # opp has voluntarily put chips in (responding to our raise / raising after limp)
+                            self.opp_vpip_round[i] = 1
+                            if cont_cost > 0: # opp has raised in response to our raise / raised after limp
+                                self.opp_pfr_round[i] = 1
+                    else: # the opp is sb
+                        if opp_pips[i] > 1:
+                            self.opp_vpip_round[i] = 1
+                        if cont_cost > 0: # opp has raised
+                            self.opp_pfr_round[i] = 1
+                            
+                if street == 3 and active == 0: # opp is bb, made it to the flop (neither of us folded)
+                    if cont_cost > 0 and my_pips[i] == 0: # opp has made a cbet
+                        self.opp_vpip_round[i] = 1
+
+                if street != self.street_tracker:                
+                    if game_state.round_num > 50 and street == 3:
+                        if self.opp_pfr_round[i] == 1:
+                            percentage = (self.opp_pfr[i] + 1) / (game_state.round_num - self.opp_walks[i]) 
+                            self.opp_range[i] = self.ranges[round(percentage * 1326)]
+                        elif self.opp_vpip_round[i] == 1:
+                            percentage = (self.opp_vpip[i] + 1) / (game_state.round_num - self.opp_walks[i]) 
+                            self.opp_range[i] = self.ranges[round(percentage * 1326)]
+                            
+                    my_cards_obj = [eval7.Card(c) for c in my_cards]
+                    self.opp_range[i] = [h for h in self.opp_range[i] if h[0][0] not in my_cards_obj and h[0][1] not in my_cards_obj]
+                    
+                    board = [eval7.Card(c) for c in board_cards[i] if c != ""]
+                    hand = [eval7.Card(c) for c in self.board_allocations[i]]
+                    self.opp_range[i] = [h for h in self.opp_range[i] if h[0][0] not in board and h[0][1] not in board]
+                    self.equity[i] = eval7.py_hand_vs_range_monte_carlo(hand, self.opp_range[i], board, 3700)
+                
+                strength = self.equity[i]
+                #######
+
+                if street < 3 and my_pips[i] == 1 and active == 0 and strength < 0.8:  # sb pre-flop 1st action, limp if s < 0.8
+                    if CallAction in legal_actions[i] and cont_cost <= my_stack - net_cost:
+                        my_actions[i] = CallAction()
+                        net_cost += cont_cost
+                    else:
+                        my_actions[i] = FoldAction()
+                elif strength < 0.5:
                     if CheckAction in legal_actions[i]:
                         my_actions[i] = CheckAction()
                     else:
                         my_actions[i] = FoldAction()
                 else:
-                    # if street == 5 and strength > 0.95:
-                    #     raise_amount = my_stack + my_pips[i] - net_cost  # all in
-                    # else:
-                    #     raise_amount = int(my_pips[i] + cont_cost + (strength - 0.5) * (pot + cont_cost))
                     raise_amount = int(my_pips[i] + cont_cost + (strength - 0.5) * (pot + cont_cost))
                     raise_amount = min(max(raise_amount, min_raise), max_raise)
 
                     if RaiseAction in legal_actions[i] and raise_amount - my_pips[i] <= my_stack - net_cost:
                         commit_action = RaiseAction(raise_amount)
                         commit_cost = raise_amount - my_pips[i]
-                    elif CallAction in legal_actions[i]:
+                    elif CallAction in legal_actions[i] and cont_cost <= my_stack - net_cost:
                         commit_action = CallAction()
                         commit_cost = cont_cost
-                    else:
+                    elif CheckAction in legal_actions[i]:
                         commit_action = CheckAction()
                         commit_cost = 0
+                    else:
+                        commit_action = FoldAction()
+                        commit_cost = 0
 
-                    print(game_state.round_num, i, pot)
-                    if strength > 0.75:  # 0.75
+
+                    if strength > 0.8:
                         my_actions[i] = commit_action
                         net_cost += commit_cost
                     else:
                         if cont_cost > 0:
                             pot_odds = cont_cost / (pot + cont_cost)
-                            if strength > max(pot_odds, pot/200):  # pot/200
-                                my_actions[i] = CallAction()
-                                net_cost += cont_cost
+                            if strength > max(pot_odds, pot/200):
+                                if cont_cost > 20:
+                                    if strength > 0.7:
+                                        if (cont_cost <= my_stack - net_cost):
+                                            my_actions[i] = CallAction()
+                                            net_cost += cont_cost
+                                        else:
+                                            my_actions[i] = FoldAction()
+                                    else:
+                                        my_actions[i] = FoldAction()
+                                else:
+                                    my_actions[i] = CallAction()
+                                    net_cost += cont_cost
                             else:
                                 my_actions[i] = FoldAction()
+                                
                         else:
                             my_actions[i] = CheckAction()
 
-                    # if cont_cost > 0:  # opp raised
-                    #     pot_odds = cont_cost / (pot + cont_cost)
-                    #     if strength > max(0.85, pot_odds):
-                    #         my_actions[i] = commit_action
-                    #         net_cost += commit_cost
-                    #     elif strength > max(0.75, pot_odds - 0.25):
-                    #         if random.random() < strength - 0.25:
-                    #             my_actions[i] = commit_action
-                    #             net_cost += commit_cost
-                    #         else:
-                    #             my_actions[i] = CallAction()
-                    #             net_cost += cont_cost
-                    #     else:
-                    #         my_actions[i] = FoldAction()
-                    # else:  # we're in control
-                    #     my_actions[i] = commit_action
-                    #     net_cost += commit_cost
+            if isinstance(my_actions[i], FoldAction):
+                if street < 3 and active == 0 and my_pips[i] == 1: # I have folded the sb
+                    self.opp_walks[i] += 1
 
+        self.street_tracker = street
         return my_actions
-
-
-
-
-        # for i in range(NUM_BOARDS):
-        #     if AssignAction in legal_actions[i]:
-        #         cards = self.board_allocations[i] #allocate our cards that we made earlier
-        #         my_actions[i] = AssignAction(cards) #add to our actions
-
-        #     elif isinstance(round_state.board_states[i], TerminalState): #make sure the game isn't over at this board
-        #         my_actions[i] = CheckAction() #check if it is
-            
-        #     else: #do we add more resources?
-        #         board_cont_cost = continue_cost[i] #we need to pay this to keep playing
-        #         board_total = round_state.board_states[i].pot #amount before we started betting
-        #         pot_total = my_pips[i] + opp_pips[i] + board_total #total money in the pot right now
-        #         min_raise, max_raise = round_state.board_states[i].raise_bounds(active, round_state.stacks)
-        #         strength = self.hole_strengths[i]
-
-        #         if street < 3: #pre-flop
-        #             raise_ammount = int(my_pips[i] + board_cont_cost + 0.4 * (pot_total + board_cont_cost)) #play a little conservatively pre-flop
-        #         else:
-        #             raise_ammount = int(my_pips[i] + board_cont_cost + 0.75 * (pot_total + board_cont_cost)) #raise the stakes deeper into the game
-                
-        #         raise_ammount = max([min_raise, raise_ammount]) #make sure we have a valid raise
-        #         raise_ammount = min([max_raise, raise_ammount])
-
-        #         raise_cost = raise_ammount - my_pips[i] #how much it costs to make that raise
-
-        #         if RaiseAction in legal_actions[i] and (raise_cost <= my_stack - net_cost): #raise if we can and if we can afford it
-        #             commit_action = RaiseAction(raise_ammount)
-        #             commit_cost = raise_cost
-                
-        #         elif CallAction in legal_actions[i]: 
-        #             commit_action = CallAction()
-        #             commit_cost = board_cont_cost #the cost to call is board_cont_cost
-                
-        #         else: #checking is our only valid move here
-        #             commit_action = CheckAction()
-        #             commit_cost = 0
-
-
-        #         if board_cont_cost > 0: #our opp raised!!! we must respond
-
-        #             if board_cont_cost > 5: #<--- parameters to tweak. 
-        #                 _INTIMIDATION = 0.15
-        #                 strength = max([0, strength - _INTIMIDATION]) #if our opp raises a lot, be cautious!
-                    
-
-        #             pot_odds = board_cont_cost / (pot_total + board_cont_cost)
-
-        #             if strength >= pot_odds: #Positive Expected Value!! at least call!!
-
-        #                 if strength > 0.5 and random.random() < strength: #raise sometimes, more likely if our hand is strong
-        #                     my_actions[i] = commit_action
-        #                     net_cost += commit_cost
-                        
-        #                 else: # at least call if we don't raise
-        #                     my_actions[i] = CallAction()
-        #                     net_cost += board_cont_cost
-                    
-        #             else: #Negatice Expected Value!!! FOLD!!!
-        #                 my_actions[i] = FoldAction()
-        #                 net_cost += 0
-                
-        #         else: #board_cont_cost == 0, we control the action
-
-        #             if random.random() < strength: #raise sometimes, more likely if our hand is strong
-        #                 my_actions[i] = commit_action
-        #                 net_cost += commit_cost
-
-        #             else: #just check otherwise
-        #                 my_actions[i] = CheckAction()
-        #                 net_cost += 0
-
-
-        # return my_actions
 
 
 if __name__ == '__main__':
