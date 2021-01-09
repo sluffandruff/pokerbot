@@ -215,7 +215,7 @@ class Player(Bot):
         my_actions = [None] * NUM_BOARDS
         for i in range(NUM_BOARDS):
             if AssignAction in legal_actions[i]:
-                cards = self.board_allocations[i] #allocate our cards that we made earlier
+                cards = self.board_allocations[i] #assign our cards that we made earlier
                 my_actions[i] = AssignAction(cards) #add to our actions
 
             elif isinstance(round_state.board_states[i], TerminalState): #make sure the game isn't over at this board
@@ -242,12 +242,16 @@ class Player(Bot):
                     commit_action = RaiseAction(raise_ammount)
                     commit_cost = raise_cost
                 
-                elif CallAction in legal_actions[i]: 
+                elif CallAction in legal_actions[i] and (board_cont_cost <= my_stack - net_cost): #call if we can afford it!
                     commit_action = CallAction()
                     commit_cost = board_cont_cost #the cost to call is board_cont_cost
                 
-                else: #checking is our only valid move here
+                elif CheckAction in legal_actions[i]: #try to check if we can
                     commit_action = CheckAction()
+                    commit_cost = 0
+                
+                else: #we have to fold 
+                    commit_action = FoldAction()
                     commit_cost = 0
 
 
@@ -266,11 +270,16 @@ class Player(Bot):
                             my_actions[i] = commit_action
                             net_cost += commit_cost
                         
-                        else: # at least call if we don't raise
-                            my_actions[i] = CallAction()
-                            net_cost += board_cont_cost
+                        else: # try to call if we don't raise
+                            if (board_cont_cost <= my_stack - net_cost): #we call because we can afford it and it's +EV
+                                my_actions[i] = CallAction()
+                                net_cost += board_cont_cost
+                                
+                            else: #we can't afford to call :(  should have managed our stack better
+                                my_actions[i] = FoldAction()
+                                net_cost += 0
                     
-                    else: #Negatice Expected Value!!! FOLD!!!
+                    else: #Negative Expected Value!!! FOLD!!!
                         my_actions[i] = FoldAction()
                         net_cost += 0
                 
@@ -283,7 +292,6 @@ class Player(Bot):
                     else: #just check otherwise
                         my_actions[i] = CheckAction()
                         net_cost += 0
-
 
         return my_actions
 
