@@ -232,7 +232,7 @@ class Player(Bot):
                 strength = self.equity[i]
                 #######
 
-                if street < 3 and my_pips[i] == 1 and active == 0 and strength < 0.8:  # sb pre-flop 1st action, limp if s < 0.8
+                if street < 3 and my_pips[i] == 1 and active == 0 and strength < 0.75:  # sb pre-flop 1st action, limp if s < 0.75
                     if CallAction in legal_actions[i] and cont_cost <= my_stack - net_cost:
                         my_actions[i] = CallAction()
                         net_cost += cont_cost
@@ -244,7 +244,7 @@ class Player(Bot):
                     else:
                         my_actions[i] = FoldAction()
                 else:
-                    raise_amount = int(my_pips[i] + cont_cost + (strength - 0.5) * (pot + cont_cost))
+                    raise_amount = int(my_pips[i] + cont_cost + (strength - 0.35) * (pot + cont_cost))
                     raise_amount = min(max(raise_amount, min_raise), max_raise)
 
                     if RaiseAction in legal_actions[i] and raise_amount - my_pips[i] <= my_stack - net_cost:
@@ -261,14 +261,14 @@ class Player(Bot):
                         commit_cost = 0
 
 
-                    if strength > 0.8:
+                    if (street < 3 and strength > 0.75) or (strength > 0.9):
                         my_actions[i] = commit_action
                         net_cost += commit_cost
                     else:
                         if cont_cost > 0:
                             pot_odds = cont_cost / (pot + cont_cost)
-                            if strength > max(pot_odds, pot/200):
-                                if cont_cost > 20:
+                            if strength > max(pot_odds, pot/220):
+                                if cont_cost >= 10:
                                     if strength > 0.7:
                                         if (cont_cost <= my_stack - net_cost):
                                             my_actions[i] = CallAction()
