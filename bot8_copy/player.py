@@ -45,6 +45,9 @@ class Player(Bot):
         self.times_called_bluff = 0
         self.tightness = 0.8
 
+        self.total_times_all_in = 0
+        self.times_all_in_this_rd = 0
+
         self.fold_rest = False
 
         self.ranges = [eval7.HandRange("AA").hands] * 7
@@ -165,6 +168,9 @@ class Player(Bot):
             self.opp_vpip_round[i] = 0
             self.opp_pfr_round[i] = 0
 
+        self.total_times_all_in += self.times_all_in_this_rd
+        self.times_all_in_this_rd = 0
+
         game_clock = game_state.game_clock #check how much time we have remaining at the end of a game
         round_num = game_state.round_num #Monte Carlo takes a lot of time, we use this to adjust!
         # print(round_num, game_clock)
@@ -276,6 +282,14 @@ class Player(Bot):
                 
                 strength = self.equity[i]
                 #######
+
+                if street < 3 and cont_cost > 180:
+                    self.times_all_in_this_rd = 1
+                    if game_state.round_num > 10 and self.total_times_all_in / game_state.round_num > 0.9:
+                        print("ALL-IN DETECTED")
+                        self.tightness = 0.7
+                    else:
+                        self.tightness = 0.8
 
 
                 if street < 3 and my_pips[i] == 1 and active == 0 and strength < 0.8:  # sb pre-flop 1st action, limp if s < 0.75
