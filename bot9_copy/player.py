@@ -351,7 +351,7 @@ class Player(Bot):
                     if curr_situation is not None:
                         self.action_counter[curr_situation] += 1
 
-                    if curr_situation is not None and game_state.round_num > 150:
+                    if curr_situation is not None and game_state.round_num > 100:
                         new_range_lower = 0
                         new_range_upper = 1
 
@@ -428,15 +428,6 @@ class Player(Bot):
 
 
                 # print(self.action_counter, self.CHECKCHECK, self.we_check_counter, self.we_raise_counter, self.opp_leads_counter)
-
-
-
-
-
-
-
-
-
 
                 ##################################################
                 ### jenny stats calculating and updating range ###

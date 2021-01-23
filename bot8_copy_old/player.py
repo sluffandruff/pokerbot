@@ -103,9 +103,6 @@ class Player(Bot):
         if random.random() < 0.3:
             best_alloc[2], best_alloc[1] = best_alloc[1], best_alloc[2]
             best_eq[2], best_eq[1] = best_eq[1], best_eq[2]
-            if random.random() < 0.35:
-                best_alloc[0], best_alloc[1] = best_alloc[1], best_alloc[0]
-                best_eq[0], best_eq[1] = best_eq[1], best_eq[0]
         ####
 
         self.board_allocations = best_alloc
@@ -155,24 +152,16 @@ class Player(Bot):
         opp_delta = terminal_state.deltas[1-active] # your opponent's bankroll change from this round 
         previous_state = terminal_state.previous_state  # RoundState before payoffs
         street = previous_state.street  # 0, 3, 4, or 5 representing when this round ended
-        for i, terminal_board_state in enumerate(previous_state.board_states):
+        for terminal_board_state in previous_state.board_states:
             previous_board_state = terminal_board_state.previous_state
             my_cards = previous_board_state.hands[active]  # your cards
             opp_cards = previous_board_state.hands[1-active]  # opponent's cards or [] if not revealed
-            if self.just_bluffed and i == self.board_bluffed:
-                self.just_bluffed = False
-                if opp_cards[0] != '':
-                    print("BLUFF CALLED")
-                    self.times_called_bluff += 1
-                else:
-                    print("BLUFF SUCCEEDED")
         
         self.board_allocations = [[], [], []] #reset our variables at the end of every round!
         self.equity = [0, 0, 0]
         self.street_tracker = 0
         self.opp_range = [[], [], []]
-
-    
+        
         for i in range(NUM_BOARDS):
             self.opp_vpip[i] += self.opp_vpip_round[i]
             self.opp_pfr[i] += self.opp_pfr_round[i]
@@ -231,13 +220,13 @@ class Player(Bot):
 
             board_state = round_state.board_states[i]
 
-            # if self.just_bluffed and i == self.board_bluffed:
-            #     self.just_bluffed = False
-            #     print("HI", legal_actions[i])
-            #     if legal_actions[i] == {CheckAction} and street == self.street_on_bluff and not isinstance(board_state, TerminalState):
-            #         print("STOP_BLUFFING")
-            #         self.tightness = 0.85
-            #         self.times_called_bluff += 1
+            if self.just_bluffed and i == self.board_bluffed:
+                self.just_bluffed = False
+                print("HI", legal_actions[i])
+                if legal_actions[i] == {CheckAction} and street == self.street_on_bluff and not isinstance(board_state, TerminalState):
+                    print("STOP_BLUFFING")
+                    self.tightness = 0.85
+                    self.times_called_bluff += 1
 
             if AssignAction in legal_actions[i]:
                 cards = self.board_allocations[i]
@@ -294,9 +283,9 @@ class Player(Bot):
                 strength = self.equity[i]
                 #######
 
-                if street < 3 and cont_cost > 130:
+                if street < 3 and cont_cost > 180:
                     self.times_all_in_this_rd = 1
-                    if game_state.round_num > 10 and self.total_times_all_in / game_state.round_num > 0.8:
+                    if game_state.round_num > 10 and self.total_times_all_in / game_state.round_num > 0.9:
                         print("ALL-IN DETECTED")
                         self.tightness = 0.7
                     else:
@@ -314,16 +303,15 @@ class Player(Bot):
 
                 if self.times_called_bluff < 2:
                     if active == 0 and legal_actions[i] == {CheckAction, RaiseAction} and all((self.equity[j] < 0.8 or isinstance(round_state.board_states[j], TerminalState)) for j in range(3)):
-                        if street == 5 or random.random() < 0.8:
+                        if street == 5 or random.random() < 0.1:
                             max_cost = min(max_raise - my_pips[i], my_stack - net_cost)
-                            if max_cost + my_pips[i] > 100:
-                                my_actions[i] = RaiseAction(max_cost + my_pips[i])
-                                net_cost += max_cost
-                                self.just_bluffed = True
-                                self.board_bluffed = i
-                                self.street_on_bluff = street
-                                print(game_state.round_num)
-                                continue
+                            my_actions[i] = RaiseAction(max_cost + my_pips[i])
+                            net_cost += max_cost
+                            self.just_bluffed = True
+                            self.board_bluffed = i
+                            self.street_on_bluff = street
+                            print(game_state.round_num)
+                            continue
                         else: 
                             raise_amount = 2 * min_raise
                             if raise_amount - my_pips[i] <= my_stack - net_cost:
