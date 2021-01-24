@@ -359,16 +359,16 @@ class Player(Bot):
                                 curr_situation = PF_RAISE_BIG
                             else:
                                 curr_situation = PF_RAISE
-                    elif active == 1 and my_pips[i] > 2:
-                        curr_situation = PF_RAISE_RAISE
+                    # elif active == 1 and my_pips[i] > 2:
+                    #     curr_situation = PF_RAISE_RAISE
                     elif active == 0 and my_pips[i] == 2:
                         if cont_cost > 10:
                             self.pf_action_counter[PF_CALL_RAISE] += 1
                             curr_situation = PF_CALL_RAISE_BIG
                         else:
                             curr_situation = PF_CALL_RAISE
-                    elif active == 0 and my_pips[i] > 2:
-                        curr_situation = PF_RAISE_RAISE
+                    # elif active == 0 and my_pips[i] > 2:
+                    #     curr_situation = PF_RAISE_RAISE
 
                     if curr_situation is not None:
                         self.pf_action_counter[curr_situation] += 1
@@ -387,7 +387,8 @@ class Player(Bot):
 
                     if previous_action is not None and previous_action[0] == street: 
                         if isinstance(previous_action[1], RaiseAction) and cont_cost > 0:
-                            curr_situation = RAISE_RAISE
+                            # curr_situation = RAISE_RAISE
+                            curr_situation = None
                         elif isinstance(previous_action[1], CheckAction) and cont_cost > 0:
                             if cont_cost > 10:
                                 self.action_counter[CHECK_RAISE] += 1
@@ -438,7 +439,7 @@ class Player(Bot):
                                 my_actions[i] = FoldAction()
                                 continue
 
-                        if strength > 0.55:
+                        if strength > 0.75:
                             raise_amount = int(my_pips[i] + cont_cost + (strength - 0.3) * (pot + cont_cost))
                             raise_amount = min(max(raise_amount, min_raise), max_raise)
 
@@ -459,7 +460,7 @@ class Player(Bot):
                             net_cost += commit_cost
                             continue
 
-                        elif strength > 0.5:
+                        elif strength > 0.7:
                             if CallAction in legal_actions[i] and cont_cost <= my_stack - net_cost:
                                 commit_action = CallAction()
                                 commit_cost = cont_cost
@@ -479,7 +480,7 @@ class Player(Bot):
                                 pot_odds = cont_cost / (pot + cont_cost)
                                 if strength > max(pot_odds, pot/200):
                                     if cont_cost > 10:
-                                        if strength > .45:
+                                        if strength > .65:
                                             if (cont_cost <= my_stack - net_cost):
                                                 my_actions[i] = CallAction()
                                                 net_cost += cont_cost
@@ -624,7 +625,7 @@ class Player(Bot):
 
                         if self.times_called_bluff < 2 and not self.just_bluffed:
                             if active == 0 and legal_actions[i] == {CheckAction, RaiseAction} and all((self.equity[j] < 0.8 or isinstance(round_state.board_states[j], TerminalState)) for j in range(3)):
-                                if street == 5 or random.random() < 0.7:
+                                if street == 5 and (i == 2 and random.random() < 0.7) or (i == 1 and random.random() < 0.5):
                                     max_cost = min(max_raise - my_pips[i], my_stack - net_cost)
                                     if max_cost + my_pips[i] > 100:
                                         my_actions[i] = RaiseAction(max_cost + my_pips[i])
@@ -640,7 +641,7 @@ class Player(Bot):
                                 #         net_cost += raise_amount - my_pips[i]
                                 #         continue
 
-                        if strength > 0.55 or (strength > 0.5 and random.random() < 0.5):
+                        if strength > 0.75 or (strength > 0.7 and random.random() < 0.5):
                             raise_amount = int(my_pips[i] + cont_cost + (strength - 0.3) * (pot + cont_cost))
                             raise_amount = min(max(raise_amount, min_raise), max_raise)
 
@@ -661,7 +662,7 @@ class Player(Bot):
                             net_cost += commit_cost
                             continue
 
-                        elif strength > 0.5:
+                        elif strength > 0.7:
                             if CallAction in legal_actions[i] and cont_cost <= my_stack - net_cost:
                                 commit_action = CallAction()
                                 commit_cost = cont_cost
@@ -681,7 +682,7 @@ class Player(Bot):
                                 pot_odds = cont_cost / (pot + cont_cost)
                                 if strength > max(pot_odds, pot/200):
                                     if cont_cost >= 10:
-                                        if strength > 0.45:
+                                        if strength > 0.65:
                                             if (cont_cost <= my_stack - net_cost):
                                                 my_actions[i] = CallAction()
                                                 net_cost += cont_cost
@@ -715,7 +716,7 @@ class Player(Bot):
 
                         if self.times_called_bluff < 2 and not self.just_bluffed:
                             if active == 0 and legal_actions[i] == {CheckAction, RaiseAction} and all((self.equity[j] < self.tightness or isinstance(round_state.board_states[j], TerminalState)) for j in range(3)):
-                                if street == 5 or random.random() < 0.7:
+                                if street == 5 and (i == 2 and random.random() < 0.7) or (i == 1 and random.random() < 0.5):
                                     max_cost = min(max_raise - my_pips[i], my_stack - net_cost)
                                     if max_cost + my_pips[i] > 100:
                                         my_actions[i] = RaiseAction(max_cost + my_pips[i])

@@ -96,7 +96,7 @@ class Player(Bot):
         for i in range(5):
             for j in range(i + 1, 6):
                 hand = (my_cards[i], my_cards[j])
-                equities[hand] = eval7.py_hand_vs_range_monte_carlo(map(eval7.Card, hand), opp_range, [], 5000)
+                equities[hand] = eval7.py_hand_vs_range_monte_carlo(map(eval7.Card, hand), opp_range, [], 500)
 
         dis = [(0, 1, 2, 3, 4, 5), (0, 1, 2, 4, 3, 5), (0, 1, 2, 5, 3, 4), 
                 (0, 2, 1, 3, 4, 5), (0, 2, 1, 4, 3, 5), (0, 2, 1, 5, 3, 4), 
@@ -193,7 +193,7 @@ class Player(Bot):
                 print(opp_cards)
                 if opp_cards[0] != '':
                     print("BLUFF CALLED")
-                    self.times_called_bluff += 1
+                    # self.times_called_bluff += 1
                 else:
                     print("BLUFF SUCCEEDED")
             elif previous_action is not None and isinstance(previous_action[1], RaiseAction) and opp_cards[0] != '':
@@ -331,8 +331,9 @@ class Player(Bot):
 
                         if previous_action is not None and previous_action[0] == street: 
                             if isinstance(previous_action[1], RaiseAction) and cont_cost > 0:
-                                print("RAISE-RAISE")
-                                curr_situation = RAISE_RAISE
+                                # print("RAISE-RAISE")
+                                # curr_situation = RAISE_RAISE
+                                curr_situation = None
                             elif isinstance(previous_action[1], CheckAction) and cont_cost > 0:
                                 print("CHECK-RAISE")
                                 if cont_cost > 10:
@@ -377,7 +378,7 @@ class Player(Bot):
                         self.tight_opp_range[i] = self.tight_opp_range[i] & this_range
                         print(new_range_lower, new_range_upper, len(self.tight_opp_range[i]))
 
-                        strength = eval7.py_hand_vs_range_monte_carlo(self.my_cards_obj[i], self.tight_opp_range[i], self.rd_board[i], 100)
+                        strength = eval7.py_hand_vs_range_monte_carlo(self.my_cards_obj[i], self.tight_opp_range[i], self.rd_board[i], 500)
                         print(game_state.round_num, i+1, street, strength)
                         print("-------------------------------")
 
@@ -472,7 +473,7 @@ class Player(Bot):
                     board = {eval7.Card(c) for c in board_cards[i] if c != ""}
                     self.opp_range[i] = [h for h in self.opp_range[i] if h[0][0] not in my_cards_obj and h[0][1] not in my_cards_obj
                                             and h[0][0] not in board and h[0][1] not in board]
-                    self.equity[i] = eval7.py_hand_vs_range_monte_carlo(map(eval7.Card, self.board_allocations[i]), self.opp_range[i], board, 5000)
+                    self.equity[i] = eval7.py_hand_vs_range_monte_carlo(map(eval7.Card, self.board_allocations[i]), self.opp_range[i], board, 500)
                 
                 strength = self.equity[i]
                 ##################################################
@@ -485,8 +486,8 @@ class Player(Bot):
                 #     else:
                 #         self.tightness = 0.8
 
-                print(game_state.round_num, i+1, street, strength)
-                print("-------------------------------")
+                # print(game_state.round_num, i+1, street, strength)
+                # print("-------------------------------")
 
                 if street < 3 and my_pips[i] == 1 and active == 0 and strength < 0.8:  # sb pre-flop 1st action, limp if s < 0.75
                     if CallAction in legal_actions[i] and cont_cost <= my_stack - net_cost:
@@ -497,7 +498,7 @@ class Player(Bot):
                         my_actions[i] = FoldAction()
                         continue
 
-                if self.times_called_bluff < 2 and not self.just_bluffed:
+                if self.times_called_bluff < 5 and not self.just_bluffed:
                     if active == 0 and legal_actions[i] == {CheckAction, RaiseAction} and all((self.equity[j] < 0.8 or isinstance(round_state.board_states[j], TerminalState)) for j in range(3)):
                         if street == 5 or random.random() < 0.1:
                             max_cost = min(max_raise - my_pips[i], my_stack - net_cost)

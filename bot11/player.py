@@ -11,6 +11,11 @@ import eval7
 import random
 from util import *
 
+PF_CALL_RAISE = 0
+PF_RAISE = 1
+CALL_RAISE = 2
+RAISE = 3
+
 
 class Player(Bot):
     '''
@@ -29,22 +34,25 @@ class Player(Bot):
         ''' 
         self.board_allocations = [[], [], []] #keep track of our allocations at round start
         self.equity = [0, 0, 0] #better representation of our hole strengths (win probability!)
-        self.street_tracker = 0
-        self.opp_range = [[], [], []]
+        self.street_tracker = -1
 
-        self.opp_walks = [0, 0, 0] # SB folds
-        self.opp_vpip = [0, 0, 0] # times
-        self.opp_pfr = [0, 0, 0]
-        self.opp_vpip_round = [0, 0, 0] # 0 or 1 
-        self.opp_pfr_round = [0, 0, 0]
+        # self.opp_walks = [0, 0, 0] # SB folds
+        # self.opp_vpip = [0, 0, 0] # times
+        # self.opp_pfr = [0, 0, 0]
+        # self.opp_vpip_round = [0, 0, 0] # 0 or 1 
+        # self.opp_pfr_round = [0, 0, 0]
 
-        self.opp_walks_total = 0
-        self.opp_vpip_total = 0
-        self.opp_pfr_total = 0
+        # self.opp_walks_total = 0
+        # self.opp_vpip_total = 0
+        # self.opp_pfr_total = 0
 
+        self.action_counter = [0, 0, 0, 0]
+        self.action_probs = [0.0, 0.0, 0.0, 0.0]
+        self.postflop_chances = 0
+
+        self.stop_bluffing = False
         self.just_bluffed = False
         self.board_bluffed = -1
-        self.street_on_bluff = -1
         self.times_called_bluff = 0
         self.times_bluff_succeeded = 0
 
@@ -77,14 +85,18 @@ class Player(Bot):
         my_cards: a list of the 6 cards given to us at round start
         '''
         my_cards_obj = {eval7.Card(c) for c in my_cards}
-        opp_range = [hand for hand in ALL_HANDS.hands if hand[0][0] not in my_cards_obj and hand[0][1] not in my_cards_obj]
-        self.opp_range = [opp_range] * 3
+        opp_range = {hand for hand in ALL_HANDS.hands if hand[0][0] not in my_cards_obj and hand[0][1] not in my_cards_obj}
+        self.opp_range = [opp_range.copy()] * 3
+
+        opp_range_incl = set(ALL_HANDS.hands)
+        self.opp_est_of_range = [opp_range_incl.copy()] * 3
+        self.prev_opp_est_of_range = [{}] * 3
 
         equities = {}
         for i in range(5):
             for j in range(i + 1, 6):
                 hand = (my_cards[i], my_cards[j])
-                equities[hand] = eval7.py_hand_vs_range_monte_carlo(map(eval7.Card, hand), opp_range, [], 5000)
+                equities[hand] = eval7.py_hand_vs_range_monte_carlo(map(eval7.Card, hand), opp_range, [], 3000)
 
         dis = [(0, 1, 2, 3, 4, 5), (0, 1, 2, 4, 3, 5), (0, 1, 2, 5, 3, 4), 
                 (0, 2, 1, 3, 4, 5), (0, 2, 1, 4, 3, 5), (0, 2, 1, 5, 3, 4), 
@@ -130,6 +142,8 @@ class Player(Bot):
                     best_eq[0], best_eq[1] = best_eq[1], best_eq[0]
         ####
 
+        self.my_cards_obj = [{eval7.Card(c) for c in hand} for hand in best_alloc]
+
         self.board_allocations = best_alloc
         self.equity = best_eq
 
@@ -159,7 +173,12 @@ class Player(Bot):
             self.fold_rest = True
             print("SEALED WIN ON RD", round_num)
         
+        self.just_raised = [(False, -1)] * 3
+        self.action_determined = [False, False, False]
+        self.rd_board = [{}, {}, {}]
+        self.my_cards_obj = [None, None, None]
         self.allocate_cards(my_cards)
+        self.pf_call_raise_already = [False, False, False]
 
 
     def handle_round_over(self, game_state, terminal_state, active):
@@ -194,25 +213,39 @@ class Player(Bot):
         self.board_allocations = [[], [], []] #reset our variables at the end of every round!
         self.equity = [0, 0, 0]
         self.street_tracker = 0
-        self.opp_range = [[], [], []]
 
-        for i in range(NUM_BOARDS):
-            self.opp_vpip[i] += self.opp_vpip_round[i]
-            self.opp_pfr[i] += self.opp_pfr_round[i]
-            self.opp_vpip_total += self.opp_vpip_round[i]
-            self.opp_pfr_total += self.opp_pfr_round[i]
-            self.opp_vpip_round[i] = 0
-            self.opp_pfr_round[i] = 0
+        # for i in range(NUM_BOARDS):
+        #     self.opp_vpip[i] += self.opp_vpip_round[i]
+        #     self.opp_pfr[i] += self.opp_pfr_round[i]
+        #     self.opp_vpip_total += self.opp_vpip_round[i]
+        #     self.opp_pfr_total += self.opp_pfr_round[i]
+        #     self.opp_vpip_round[i] = 0
+        #     self.opp_pfr_round[i] = 0
+
+        self.action_probs[PF_CALL_RAISE] = self.action_counter[PF_CALL_RAISE] / (3 * game_state.round_num)
+        self.action_probs[PF_RAISE] = self.action_counter[PF_RAISE] / (3 * game_state.round_num)
+        if self.postflop_chances > 0:
+            self.action_probs[CALL_RAISE] = self.action_counter[CALL_RAISE] / self.postflop_chances
+            self.action_probs[RAISE] = self.action_counter[RAISE] / self.postflop_chances
+        # print(self.opp_vpip, self.opp_pfr)
+        print("**", self.action_probs, "**")
 
         self.total_times_all_in += self.times_all_in_this_rd
         self.times_all_in_this_rd = 0
 
         game_clock = game_state.game_clock #check how much time we have remaining at the end of a game
         round_num = game_state.round_num #Monte Carlo takes a lot of time, we use this to adjust!
+
+        if round_num == 50:
+            self.bankrolls_at_50 = (game_state.bankroll, game_state.opp_bankroll)
+            if not self.initiate_destroy_hot_pott:
+                self.pf_tightness = 0.75
+                self.tightness = 0.6
+
         # print(round_num, game_clock)
         if round_num == NUM_ROUNDS:
             print(game_clock)
-            print(self.opp_walks, self.opp_vpip, self.opp_pfr)
+            print("At rd 50:", self.bankrolls_at_50)
         
 
     def get_actions(self, game_state, round_state, active):
@@ -243,26 +276,25 @@ class Player(Bot):
 
         my_actions = [None] * NUM_BOARDS
 
+        if street != self.street_tracker:
+            self.action_determined = [False, False, False]
+
         for i in range(NUM_BOARDS):
+            ###########################
+            ### game is already won ###
+            ###########################
             if self.fold_rest:
                 if AssignAction in legal_actions[i]:
                     cards = self.board_allocations[i]
                     my_actions[i] = AssignAction(cards)
-                elif CheckAction in legal_actions[i]: 
+                elif CheckAction in legal_actions[i]:
                     my_actions[i] = CheckAction()
                 else:
                     my_actions[i] = FoldAction()
                 continue
+            ###########################
 
             board_state = round_state.board_states[i]
-
-            # if self.just_bluffed and i == self.board_bluffed:
-            #     self.just_bluffed = False
-            #     print("HI", legal_actions[i])
-            #     if legal_actions[i] == {CheckAction} and street == self.street_on_bluff and not isinstance(board_state, TerminalState):
-            #         print("STOP_BLUFFING")
-            #         self.tightness = 0.85
-            #         self.times_called_bluff += 1
 
             if AssignAction in legal_actions[i]:
                 cards = self.board_allocations[i]
@@ -274,6 +306,21 @@ class Player(Bot):
                 init_pot = board_state.pot
                 pot = my_pips[i] + opp_pips[i] + init_pot
                 min_raise, max_raise = board_state.raise_bounds(active, round_state.stacks)
+
+                ########################
+                ### beating hot pott ###
+                ########################
+                if street < 3 and cont_cost > 120:
+                    self.times_all_in_this_rd = 1
+                    if game_state.round_num > 10 and self.total_times_all_in / game_state.round_num > 0.6:
+                        print("HOT-POTT DETECTED")
+                        self.initiate_destroy_hot_pott = True
+                        self.pf_tightness = 0.7
+                        self.tightness = 0.7
+                    # else:
+                    #     self.initiate_destroy_hot_pott = False
+                    #     self.tightness = 0.8
+                    #     print("False")
 
                 if self.initiate_destroy_hot_pott:
                     strength = self.equity[i]
@@ -313,68 +360,141 @@ class Player(Bot):
                                         my_actions[i] = RaiseAction(raise_amount)
                                         net_cost += raise_amount - my_pips[i]
                                         continue
-                        
+                # ########################
 
-                ######
-                recalc = False
-                if street < 3:
-                    if active == 0: # the opp is bb
-                        if opp_pips[i] > 2: # opp has voluntarily put chips in (responding to our raise / raising after limp)
-                            if self.opp_vpip_round[i] == 0:
-                                recalc = True
-                            self.opp_vpip_round[i] = 1
-                            if cont_cost > 0: # opp has raised in response to our raise / raised after limp
-                                if self.opp_pfr_round[i] == 0:
-                                    recalc = True
-                                self.opp_pfr_round[i] = 1
-                    else: # the opp is sb
-                        if opp_pips[i] > 1:
-                            if self.opp_vpip_round[i] == 0:
-                                recalc = True
-                            self.opp_vpip_round[i] = 1
-                        if cont_cost > 0: # opp has raised
-                            if self.opp_pfr_round[i] == 0:
-                                recalc = True
-                            self.opp_pfr_round[i] = 1
+                # recalc = False
+                # if street < 3:
+                #     if active == 0: # the opp is bb
+                #         if opp_pips[i] > 2: # opp has voluntarily put chips in (responding to our raise / raising after limp)
+                #             if self.opp_vpip_round[i] == 0:
+                #                 recalc = True
+                #             self.opp_vpip_round[i] = 1
+                #             if cont_cost > 0: # opp has raised in response to our raise / raised after limp
+                #                 if self.opp_pfr_round[i] == 0:
+                #                     recalc = True
+                #                 self.opp_pfr_round[i] = 1
+                #     else: # the opp is sb
+                #         if opp_pips[i] > 1:
+                #             if self.opp_vpip_round[i] == 0:
+                #                 recalc = True
+                #             self.opp_vpip_round[i] = 1
+                #         if cont_cost > 0: # opp has raised
+                #             if self.opp_pfr_round[i] == 0:
+                #                 recalc = True
+                #             self.opp_pfr_round[i] = 1
                             
-                if street == 3 and active == 0: # opp is bb, made it to the flop (neither of us folded)
-                    if cont_cost > 0 and my_pips[i] == 0: # opp has made a cbet
-                        self.opp_vpip_round[i] = 1
+                # if street == 3 and active == 0: # opp is bb, made it to the flop (neither of us folded)
+                #     if cont_cost > 0 and my_pips[i] == 0: # opp has made a cbet
+                #         self.opp_vpip_round[i] = 1
 
-                if street != self.street_tracker or recalc:           
-                    if game_state.round_num > 50 and street <= 3:
-                        if self.opp_pfr_round[i] == 1:
-                            # percentage = (self.opp_pfr[i] + 1) / (game_state.round_num - self.opp_walks[i])
-                            percentage = self.opp_pfr_total / (3 * (game_state.round_num - 1) - self.opp_walks_total)
-                            self.opp_range[i] = self.ranges[round(percentage * 1326)]
-                            print(percentage)
-                        elif self.opp_vpip_round[i] == 1:
-                            # percentage = (self.opp_vpip[i] + 1) / (game_state.round_num - self.opp_walks[i]) 
-                            percentage = self.opp_vpip_total / (3 * (game_state.round_num - 1) - self.opp_walks_total)
-                            self.opp_range[i] = self.ranges[round(percentage * 1326)]
-                            print(percentage)
-                    my_cards_obj = {eval7.Card(c) for c in my_cards}
-                    board = {eval7.Card(c) for c in board_cards[i] if c != ""}
-                    self.opp_range[i] = [h for h in self.opp_range[i] if h[0][0] not in my_cards_obj and h[0][1] not in my_cards_obj
-                                            and h[0][0] not in board and h[0][1] not in board]
-                    self.equity[i] = eval7.py_hand_vs_range_monte_carlo(map(eval7.Card, self.board_allocations[i]), self.opp_range[i], board, 5000)
+                ##################
                 
+                if street != self.street_tracker:
+                    if street == 3:
+                        self.rd_board[i] = {eval7.Card(c) for c in board_cards[i][:3]}
+                        self.prev_opp_est_of_range[i] = self.opp_est_of_range[i]
+                        self.opp_est_of_range[i] = {h for h in self.opp_est_of_range[i] if h[0][0] not in self.rd_board[i] and h[0][1] not in self.rd_board[i]}
+                    elif street == 4:
+                        added_card = eval7.Card(board_cards[i][3])
+                        self.rd_board[i].add(added_card)
+                        self.prev_opp_est_of_range[i] = self.opp_est_of_range[i]
+                        self.opp_est_of_range[i] = {h for h in self.opp_est_of_range[i] if h[0][0] != added_card and h[0][1] != added_card}
+                    else:
+                        added_card = eval7.Card(board_cards[i][4])
+                        self.rd_board[i].add(added_card)
+                        self.prev_opp_est_of_range[i] = self.opp_est_of_range[i]
+                        self.opp_est_of_range[i] = {h for h in self.opp_est_of_range[i] if h[0][0] != added_card and h[0][1] != added_card}
+
+                if board_state.settled:
+                    my_actions[i] = CheckAction()
+                    continue
+
+                if street != self.street_tracker and street > 0:
+                    self.postflop_chances += 1
+
+                if street == 3 and active == 0 and not self.pf_call_raise_already[i]:
+                    if cont_cost > 0 and my_pips[i] == 0:
+                        self.action_counter[PF_CALL_RAISE] += 1  # technically have to recompute range here
+                        self.pf_call_raise_already[i] = True
+
+                opp_action = None
+                if not self.action_determined[i]:
+                    if street == 0:  # preflop
+                        if active == 0:  # opp is bb
+                            if opp_pips[i] > 2:
+                                # print("PF_CALL_RAISE")
+                                self.pf_call_raise_already[i] = True
+                                opp_action = PF_CALL_RAISE
+                                self.action_counter[PF_CALL_RAISE] += 1
+                                if cont_cost > 0:
+                                    # print("PF_RAISE")
+                                    opp_action = PF_RAISE
+                                    self.action_counter[PF_RAISE] += 1
+                        else:  # opp is sb
+                            if opp_pips[i] > 1:
+                                # print("PF_CALL_RAISE")
+                                opp_action = PF_CALL_RAISE
+                                self.pf_call_raise_already[i] = True
+                                self.action_counter[PF_CALL_RAISE] += 1
+                                if cont_cost > 0:
+                                    # print("PF_RAISE")
+                                    opp_action = PF_RAISE
+                                    self.action_counter[PF_RAISE] += 1
+                    else:  # flop/turn/river
+                        if self.just_raised[i][0] and self.just_raised[i][1] != street:  # (raised, street raised on)
+                            if street == 3 and not self.pf_call_raise_already[i]:
+                                # print("PF_CALL_RAISE")
+                                self.action_counter[PF_CALL_RAISE] += 1
+                                top_percent = max(min(self.action_probs[PF_CALL_RAISE], 1), 0)
+                                hand_to_equity = eval7.py_all_hands_vs_range(self.prev_opp_est_of_range[i], self.prev_opp_est_of_range[i], self.rd_board[i], 100)
+                                sorted_hands = [(k,1.0) for k, v in sorted(hand_to_equity.items(), key=lambda item: item[1], reverse=True)]
+                                est_range_this_action = set(sorted_hands[:round(top_percent * len(sorted_hands))])
+                                self.opp_range[i] = self.opp_range[i] & est_range_this_action
+                            elif street > 3:
+                                # print("CALL_RAISE")
+                                self.action_counter[CALL_RAISE] += 1
+                                top_percent = max(min(self.action_probs[CALL_RAISE], 1), 0)
+                                hand_to_equity = eval7.py_all_hands_vs_range(self.prev_opp_est_of_range[i], self.prev_opp_est_of_range[i], self.rd_board[i], 100)
+                                sorted_hands = [(k,1.0) for k, v in sorted(hand_to_equity.items(), key=lambda item: item[1], reverse=True)]
+                                est_range_this_action = set(sorted_hands[:round(top_percent * len(sorted_hands))])
+                                self.opp_range[i] = self.opp_range[i] & est_range_this_action
+                        if cont_cost > 0:
+                            # print("RAISE")
+                            opp_action = RAISE
+                            self.action_counter[CALL_RAISE] += 1
+                            self.action_counter[RAISE] += 1
+                                
+                if opp_action is not None:
+                    self.action_determined[i] = True
+
+                    if game_state.round_num > 50:  # narrow it using percentage
+                        if street == 0:
+                            if opp_action == PF_CALL_RAISE:
+                                top_percent = max(min(self.action_probs[PF_CALL_RAISE], 1), 0)
+                            else:  # raise
+                                top_percent = max(min(self.action_probs[RAISE], 1), 0)
+                            est_range_this_action = set(self.ranges[round(top_percent * 1326)])
+                        else:  # has to be raise
+                            top_percent = max(min(self.action_probs[RAISE], 1), 0)
+                            hand_to_equity = eval7.py_all_hands_vs_range(self.opp_est_of_range[i], self.opp_est_of_range[i], self.rd_board[i], 100)
+                            sorted_hands = [(k,1.0) for k, v in sorted(hand_to_equity.items(), key=lambda item: item[1], reverse=True)]
+                            est_range_this_action = set(sorted_hands[:round(top_percent * len(sorted_hands))])
+
+                        new_range = self.opp_range[i] & est_range_this_action
+                        if len(new_range) > 10:
+                            self.opp_range[i] = new_range
+                        else:
+                            self.opp_range[i] = self.opp_range[i] & self.opp_est_of_range[i]
+
+                elif street != self.street_tracker:  # can also update this up top instead
+                    self.opp_range[i] = self.opp_range[i] & self.opp_est_of_range[i]
+                    
+                self.equity[i] = eval7.py_hand_vs_range_monte_carlo(self.my_cards_obj[i], self.opp_range[i], self.rd_board[i], 1500)
                 strength = self.equity[i]
+
                 #######
-                print(game_state.round_num, i+1, street, strength)
 
-                if street < 3 and cont_cost > 120:
-                    self.times_all_in_this_rd = 1
-                    if game_state.round_num > 10 and self.total_times_all_in / game_state.round_num > 0.6:
-                        print("HOT-POTT DETECTED")
-                        self.initiate_destroy_hot_pott = True
-                        self.pf_tightness = 0.7
-                        self.tightness = 0.7
-                    # else:
-                    #     self.initiate_destroy_hot_pott = False
-                    #     self.tightness = 0.8
-                    #     print("False")
-
+                print(game_state.round_num, i+1, street, strength, len(self.opp_range[i]))
 
 
                 if street < 3 and my_pips[i] == 1 and active == 0 and strength < self.pf_tightness:  # sb pre-flop 1st action, limp if s < 0.75
@@ -386,8 +506,11 @@ class Player(Bot):
                         my_actions[i] = FoldAction()
                         continue
 
+                if (self.times_called_bluff > 2 and self.times_bluff_succeeded / self.times_called_bluff < 7) or (self.times_called_bluff > 1 and self.times_bluff_succeeded / self.times_called_bluff < 4):
+                    self.stop_bluffing = True
+
                 raise_bluff = True
-                if not (self.times_called_bluff > 2 and self.times_bluff_succeeded / self.times_called_bluff < 7) and not self.just_bluffed:
+                if not self.stop_bluffing and not self.just_bluffed:
                     if active == 0 and legal_actions[i] == {CheckAction, RaiseAction} and all((self.equity[j] < 0.8 or isinstance(round_state.board_states[j], TerminalState)) for j in range(3)):
                         if street == 5 or random.random() < 0.1:
                             max_cost = min(max_raise - my_pips[i], my_stack - net_cost)
@@ -396,8 +519,6 @@ class Player(Bot):
                                 net_cost += max_cost
                                 self.just_bluffed = True
                                 self.board_bluffed = i
-                                self.street_on_bluff = street
-                                print(game_state.round_num)
                                 continue
                             else:
                                 raise_bluff = False
@@ -412,6 +533,15 @@ class Player(Bot):
                     tightness = self.pf_tightness
                 else:
                     tightness = self.tightness
+
+                if self.stop_bluffing and active == 0 and legal_actions[i] == {CheckAction, RaiseAction}:
+                    if strength > 0.85 and random.random() < 0.3:
+                        max_cost = min(max_raise - my_pips[i], my_stack - net_cost)
+                        if max_cost + my_pips[i] > 100:
+                            print("BLUFF BAITED")
+                            my_actions[i] = RaiseAction(max_cost + my_pips[i])
+                            net_cost += max_cost
+                            continue
                 
                 if strength > tightness + pot/2000:
                     raise_amount = int(my_pips[i] + cont_cost + (strength - 0.3) * (pot + cont_cost))
@@ -449,6 +579,23 @@ class Player(Bot):
                     net_cost += commit_cost
                     continue
 
+                if game_state.round_num > 50 and street > 0 and street != self.street_tracker and cont_cost == 0 and strength > max(self.action_probs[CALL_RAISE] + 0.05, 0.5):
+                    print("TRIED PSEUDO-BLUFF")
+                    raise_amount = min_raise
+                    if RaiseAction in legal_actions[i] and raise_amount - my_pips[i] <= my_stack - net_cost:
+                        commit_action = RaiseAction(raise_amount)
+                        commit_cost = raise_amount - my_pips[i]
+                    elif CheckAction in legal_actions[i]:
+                        commit_action = CheckAction()
+                        commit_cost = 0
+                    else:
+                        commit_action = FoldAction()
+                        commit_cost = 0
+
+                    my_actions[i] = commit_action
+                    net_cost += commit_cost
+                    continue
+
                 if cont_cost > 0:
                     pot_odds = cont_cost / (pot + cont_cost)
                     if strength > max(pot_odds, pot/200):
@@ -475,10 +622,11 @@ class Player(Bot):
                     my_actions[i] = CheckAction()
                     continue
 
-            # if isinstance(my_actions[i], FoldAction):
-            #     if street < 3 and active == 0 and my_pips[i] == 1: # I have folded the sb
-            #         self.opp_walks[i] += 1
-
+        for i, action in enumerate(my_actions):
+            if not isinstance(round_state.board_states[i], TerminalState) and not round_state.board_states[i].settled and isinstance(action, RaiseAction):
+                self.just_raised[i] = (True, street)
+            else:
+                self.just_raised[i] = (False, -1)
         self.street_tracker = street
         return my_actions
 
