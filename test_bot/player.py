@@ -148,27 +148,23 @@ class Player(Bot):
             if AssignAction in legal_actions[i]:
                 cards = self.board_allocations[i] #allocate our cards that we made earlier
                 my_actions[i] = AssignAction(cards) #add to our actions
-            elif (RaiseAction in legal_actions[i] and random.random() < 0.1): #only consider this if we're strong
+            elif (RaiseAction in legal_actions[i] and (game_state.round_num < 50 or (game_state.round_num > 50 and random.random() < 0.1))): #only consider this if we're strong
                 min_raise, max_raise = round_state.board_states[i].raise_bounds(active, round_state.stacks) #calulate the highest and lowest we can raise to
-                min_cost = min_raise - my_pips[i] #the cost to give the max raise
 
-                if min_cost <= my_stack - net_cost: #make sure the max_cost is something we can afford! Must have at least this much left after our other costs
-                    my_actions[i] = RaiseAction(min_raise) #GO ALL IN!!!
-                    net_cost += min_cost
-                
-                elif CallAction in legal_actions[i]: # check-call
-                    my_actions[i] = CallAction()
-                    net_cost += continue_cost[i]
-
-                else:
-                    my_actions[i] = CheckAction()
+                max_cost = min(max_raise - my_pips[i], my_stack - net_cost)
+                if max_cost + my_pips[i] > 100:
+                    print("BLUFF BAITED")
+                    my_actions[i] = RaiseAction(max_cost + my_pips[i])
+                    net_cost += max_cost
 
             elif CheckAction in legal_actions[i]:  # check-call
                 my_actions[i] = CheckAction()
 
-            else:
+            elif CallAction in legal_actions[i]:
                 my_actions[i] = CallAction()
                 net_cost += continue_cost[i]
+            else:
+                my_actions[i] = FoldAction()
         return my_actions
 
 
