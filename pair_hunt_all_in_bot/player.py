@@ -6,7 +6,7 @@ from skeleton.states import GameState, TerminalState, RoundState, BoardState
 from skeleton.states import NUM_ROUNDS, STARTING_STACK, BIG_BLIND, SMALL_BLIND, NUM_BOARDS
 from skeleton.bot import Bot
 from skeleton.runner import parse_args, run_bot
-
+import random
 
 class Player(Bot):
     '''
@@ -149,7 +149,7 @@ class Player(Bot):
                 cards = self.board_allocations[i] #allocate our cards that we made earlier
                 my_actions[i] = AssignAction(cards) #add to our actions
 
-            elif (RaiseAction in legal_actions[i] and self.strong_hole): #only consider this if we're strong
+            elif (RaiseAction in legal_actions[i] and (game_state.round_num < 50 or random.random() < 0.1)): #only consider this if we're strong
                 min_raise, max_raise = round_state.board_states[i].raise_bounds(active, round_state.stacks) #calulate the highest and lowest we can raise to
                 max_cost = max_raise - my_pips[i] #the cost to give the max raise
 
